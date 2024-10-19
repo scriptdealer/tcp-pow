@@ -8,14 +8,22 @@ For this implementation, we'll use the Hashcash algorithm. It's a simple yet eff
 * It's well-known and widely used
 
 ## Local server
-`docker build -t tcp-pow-server -f test/server/Dockerfile .`   
+```bash
+docker build -t tcp-pow-server -f test/server/Dockerfile .
+```   
 then    
-`docker run -p 8080:8080 tcp-pow-server`
+```bash
+docker run -p 8080:8080 tcp-pow-server
+```
 
 ## Local client
-`docker build -t tcp-pow-client -f test/client/Dockerfile .`
+```bash
+docker build -t tcp-pow-client -f test/client/Dockerfile .
+```
 then
-`docker run -it tcp-pow-client`
+```bash
+docker run -it tcp-pow-client
+```
 
 ## Docker network
 To create a common network for the server and client containers:
