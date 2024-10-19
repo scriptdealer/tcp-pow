@@ -1,5 +1,5 @@
-# Faraway test
-Proof-of-Work over TCP
+# Proof-of-Work over TCP
+Faraway test
 
 ## Algorithm choice
 For this implementation, we'll use the Hashcash algorithm. It's a simple yet effective PoW system that requires the client to find a partial hash collision. This algorithm is suitable because:
