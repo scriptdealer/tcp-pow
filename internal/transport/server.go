@@ -20,9 +20,7 @@ type Server struct {
 	listener net.Listener
 	Log      *slog.Logger
 	powAlg   *services.BasicHashcash
-	// skipping connection pool for simplicity
-	// skipping auth and k8s probes for simplicity
-	// also skipping rate limiter
+	limiter  *services.ConnectionPool
 }
 
 func NewServer() *Server {
@@ -32,6 +30,7 @@ func NewServer() *Server {
 	return &Server{
 		address: fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
 		powAlg:  services.NewHC(5, time.Hour),
+		limiter: services.NewConnectionPool(logger, 100, 5, time.Second*10),
 		Log:     logger,
 		wisdom: []string{
 			"The only way to do great work is to love what you do.",
@@ -82,11 +81,20 @@ func (s *Server) Stop() error {
 	return nil
 }
 
+func (s *Server) ResetLimiter() {
+	s.limiter.Reset()
+}
+
 func (s *Server) handle(conn net.Conn) {
 	defer conn.Close()
 
-	s.Log.Info("New connection", "remote_addr", conn.RemoteAddr().String())
-	challenge := s.powAlg.NewChallenge(conn.RemoteAddr().String())
+	ip := strings.Split(conn.RemoteAddr().String(), ":")[0]
+	difficulty := s.limiter.CountRequests(ip) // for each recorded request, difficulty goes up by 1
+	if difficulty == services.ConnLimitReached {
+		conn.Write([]byte("you're wise enough!\n"))
+	}
+	s.Log.Info("New challenge", "ip", ip, "difficulty", difficulty)
+	challenge := s.powAlg.NewChallengeWithDifficulty(ip, difficulty)
 	conn.Write([]byte(challenge + "\n")) //nolint:errcheck
 
 	reader := bufio.NewReader(conn)
@@ -102,5 +110,6 @@ func (s *Server) handle(conn net.Conn) {
 		conn.Write([]byte(quote + "\n")) //nolint:errcheck
 	} else {
 		conn.Write([]byte("Invalid proof of work\n")) //nolint:errcheck
+		// ToDo: s.limiter.AddPenalty(ip)
 	}
 }

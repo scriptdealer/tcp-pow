@@ -1,6 +1,7 @@
 package test
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -8,65 +9,98 @@ import (
 )
 
 func TestClientServerIntegration(t *testing.T) {
-	// Start the server
 	server := transport.NewServer()
+	errChan := make(chan error, 1)
 	go func() {
-		if err := server.Start(); err != nil {
-			t.Errorf("Failed to start server: %v", err)
-		}
+		errChan <- server.Start()
 	}()
-	defer server.Stop()
-
-	// Give the server some time to start
+	// Give the server a moment to start up
 	time.Sleep(time.Second)
 
-	// Create a client
-	client := transport.NewClient()
+	select {
+	case err := <-errChan:
+		t.Fatalf("Failed to start server: %v", err)
+	default:
+		// Server started successfully, continue with tests
+	}
+	defer server.Stop()
 
-	// Test cases
-	t.Run("GetQuote", func(t *testing.T) {
+	// Change maxCnn in NewConnectionPool from 5 to 6 to make complexity x10
+	t.Run("SingleQuoteRequest", testSingleQuoteRequest)
+	t.Run("MultipleQuoteRequests", testMultipleQuoteRequests)
+	t.Run("ConcurrentClients", testConcurrentClients)
+	t.Run("QuoteUniqueness", testQuoteUniqueness)
+}
+
+func testSingleQuoteRequest(t *testing.T) {
+	client := transport.NewClient()
+	quote, err := client.GetQuote()
+	if err != nil {
+		t.Fatalf("Failed to get quote: %v", err)
+	}
+	if quote == "" {
+		t.Fatal("Received empty quote")
+	}
+}
+
+func testMultipleQuoteRequests(t *testing.T) {
+	start := time.Now()
+	target := time.Millisecond * 900
+	n := 6
+	client := transport.NewClient()
+	for i := 0; i < n; i++ {
 		quote, err := client.GetQuote()
 		if err != nil {
-			t.Errorf("Failed to get quote: %v", err)
+			t.Fatalf("Failed to get quote on iteration %d: %v", i, err)
 		}
 		if quote == "" {
-			t.Error("Received empty quote")
+			t.Fatalf("Received empty quote on iteration %d", i)
 		}
-	})
+	}
+	if time.Since(start) < target {
+		t.Fatalf("%d requests from same IP should take more than %v", n, target)
+	}
+}
 
-	t.Run("MultipleQuotes", func(t *testing.T) {
-		for i := 0; i < 5; i++ {
+func testConcurrentClients(t *testing.T) {
+	numClients := 4 // Can't really test it from the same IP address
+	var wg sync.WaitGroup
+	wg.Add(numClients)
+
+	for i := 0; i < numClients; i++ {
+		go func() {
+			defer wg.Done()
+			client := transport.NewClient()
 			quote, err := client.GetQuote()
 			if err != nil {
-				t.Errorf("Failed to get quote on iteration %d: %v", i, err)
+				t.Errorf("Failed to get quote: %v", err)
 			}
 			if quote == "" {
-				t.Errorf("Received empty quote on iteration %d", i)
+				t.Error("Received empty quote")
 			}
-		}
-	})
+		}()
+	}
 
-	t.Run("ConcurrentClients", func(t *testing.T) {
-		numClients := 10
-		done := make(chan bool)
+	wg.Wait()
+}
 
-		for i := 0; i < numClients; i++ {
-			go func(clientNum int) {
-				client := transport.NewClient()
-				quote, err := client.GetQuote()
-				if err != nil {
-					t.Errorf("Client %d failed to get quote: %v", clientNum, err)
-				}
-				if quote == "" {
-					t.Errorf("Client %d received empty quote", clientNum)
-				}
-				t.Log(quote)
-				done <- true
-			}(i)
-		}
+func testQuoteUniqueness(t *testing.T) {
+	client := transport.NewClient()
+	quotes := make(map[string]bool)
+	numQuotes := 5
 
-		for i := 0; i < numClients; i++ {
-			<-done
+	for i := 0; i < numQuotes; i++ {
+		quote, err := client.GetQuote()
+		if err != nil {
+			t.Fatalf("Failed to get quote on iteration %d: %v", i, err)
 		}
-	})
+		if quote == "" {
+			t.Fatalf("Received empty quote on iteration %d", i)
+		}
+		quotes[quote] = true
+	}
+
+	if len(quotes) <= 1 {
+		t.Fatal("Expected multiple unique quotes")
+	}
 }

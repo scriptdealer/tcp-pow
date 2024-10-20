@@ -36,6 +36,10 @@ func (hc *BasicHashcash) NewChallenge(resourceID string) string {
 	return fmt.Sprintf("%d|%s|%d", hc.difficulty, resourceID, time.Now().UnixNano())
 }
 
+func (hc *BasicHashcash) NewChallengeWithDifficulty(resourceID string, difficulty int) string {
+	return fmt.Sprintf("%d|%s|%d", difficulty, resourceID, time.Now().UnixNano())
+}
+
 func (hc *BasicHashcash) parse(challenge string) (int, string, int64, error) {
 	parts := strings.Split(challenge, "|")
 	if len(parts) != 3 {
